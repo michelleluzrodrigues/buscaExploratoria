@@ -105,10 +105,10 @@ class GlobalResources:
         
     def victims_by_cluster(self, assignments, cluster_id):
        
-        victims = []
+        victims = {}
         for index, key in enumerate(self.victims):
            if assignments[index] == cluster_id:
-               victims.append(self.victims[key])
+               victims[key] = self.victims[key]
         
         return victims
     

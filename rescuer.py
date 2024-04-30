@@ -26,6 +26,7 @@ class Rescuer(AbstAgent):
         super().__init__(env, config_file)
 
         # Specific initialization for the rescuer
+        self.id = id
         self.map = None             # explorer will pass the map
         self.victims = None         # list of found victims
         self.plan = []              # a list of planned actions
@@ -41,7 +42,10 @@ class Rescuer(AbstAgent):
         
         self.plan_excuted = []
         self.victims_saved = 0
+        self.saved_victimes = []
         self.returning = False
+        
+        self.arq_seq_content = ""
                 
         # Starts in IDLE state.
         # It changes to ACTIVE when the map arrives
@@ -221,6 +225,11 @@ class Rescuer(AbstAgent):
                 self.victims_saved += 1
                 if rescued:
                     print(f"{self.NAME} Victim rescued at ({self.x}, {self.y})")
+                    id_vit, data = self.buscar_vitima_por_possicao((self.x, self.y))
+                    if id_vit not in self.saved_victimes:
+                        self.saved_victimes.append(id_vit)
+                        self.arq_seq_content += f"{id_vit},{self.x},{self.y},0,{data[1][6]}\n"
+                        self.salvar_arq()
                 else:
                     print(f"{self.NAME} Plan fail - victim not found at ({self.x}, {self.x})")
         else:
@@ -243,9 +252,24 @@ class Rescuer(AbstAgent):
         self.set_state(VS.ACTIVE)
         self.__planner()
         
-    def add_victim(self, victim):
-        self.victim = victim
+    def add_victim(self, victim: dict):
+        self.victims = victim
+        self.victim = []
+        
+        for vit in self.victims.items():
+            self.victim.append(vit[1])
         
         for value in self.victim:
             grav = self.classification.compute(value[1][3], value[1][4], value[1][5])
             value[1].append(grav)
+            
+    def buscar_vitima_por_possicao(self, pos):
+        for chave, lista in self.victims.items():
+            if lista[0] == pos:
+                return chave, lista
+        return None, None  # Retorna None se não encontrar correspondência
+    
+    def salvar_arq(self):
+        with open(f"seq{self.id + 1}", 'w') as arquivo:
+            # Escrevendo conteúdo no arquivo
+            arquivo.write(self.arq_seq_content)
