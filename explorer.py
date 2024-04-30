@@ -9,6 +9,7 @@ import os
 import random
 import math
 from abc import ABC, abstractmethod
+from global_resources import GlobalResources
 from vs.abstract_agent import AbstAgent
 from vs.constants import VS
 from map import Map
@@ -62,6 +63,9 @@ class Explorer(AbstAgent):
         # put the current position - the base - in the map
         self.map.add((self.x, self.y), 1, VS.NO_VICTIM, self.check_walls_and_lim())
         self.visited.add((self.x, self.y)) # add the base to the visited cells
+        
+    def add_global_resources(self, global_resources: GlobalResources):
+        self.global_resources = global_resources
         
     def translocate_list(self, list, shift):
         return list[-(shift * 2):] + list[:-(shift * 2)]
@@ -211,6 +215,17 @@ class Explorer(AbstAgent):
             print(f"{self.NAME}: rtime {self.get_rtime()}")
             #input(f"{self.NAME}: type [ENTER] to proceed")
             self.set_state(VS.IDLE)
+            
+            if (self.global_resources.all_explorers_finished()):
+                self.global_resources.update_explorers_data()
+                assignments, centroids = self.global_resources.k_means_clustering()
+                #self.global_resources.plot_kmeans(assignments, centroids)
+                
+                for i in range(4):
+                    vit = self.global_resources.victims_by_cluster(assignments, i)
+                    self.global_resources.rescuers[i].add_victim(vit)
+                
+                self.global_resources.release_rescuers()
             return False
         
         return True

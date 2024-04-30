@@ -11,10 +11,7 @@ import math
 import colorsys
 from .abstract_agent import AbstAgent
 from .physical_agent import PhysAgent
-from rescuer import Rescuer
-from map import Map
 from .constants import VS
-import matplotlib.pyplot as plt
 
 
 ## Class Environment
@@ -173,10 +170,15 @@ class Env:
         self.screen.fill(VS.WHITE)
 
         # configuration for obstacles coloring
-        hue = 300  # Not relevant for grayscale; 0=Red, 120=green, 240=blue till 360
-        saturation = 0  # 40=Red 0=Grayscale
-        lightness_clear = 100  # 100 = White 
-        lightness_dark = 25  # 0=Black
+        # h,  s,   lc, ld:
+        # 13, 100, 100, 65 red tonalities
+        # 275,100, 100, 65 purple
+        # 90, 35,  100, 40 green tonaliies
+        #  0,  0,  100, 50 gray tonnalitites
+        hue = 0                # Not relevant for grayscale; 0=Red, 120=green, 240=blue till 360
+        saturation = 0         # 40=Red  0  = Grayscale
+        lightness_clear = 100  #         100= White 
+        lightness_dark = 40    #         0  = Black
 
         # configuration for ploting the trace marks
         nb_of_ag = len(self.agents)
@@ -188,19 +190,22 @@ class Env:
         for x in range(self.dic["GRID_WIDTH"]):
             for y in range(self.dic["GRID_HEIGHT"]):
                 rect = pygame.Rect(x * cell_w, y * cell_h, cell_w, cell_h)
-                pygame.draw.rect(self.screen, VS.BLACK, rect, 1)
+                pygame.draw.rect(self.screen, (230,230,230), rect, 1)
 
                 if self.obst[x][y] == VS.OBST_WALL: # wall
                     rgb_int = VS.BLACK
                 else:
-                    perc = self.obst[x][y]/self.__max_obst
-                    lightness = (1 - perc) * lightness_clear + perc * lightness_dark
+                    if self.obst[x][y] == VS.OBST_NONE:
+                        rgb_int = VS.WHITE
+                    else:
+                        perc = self.obst[x][y]/self.__max_obst
+                        lightness = (1 - perc) * lightness_clear + perc * lightness_dark
 
-                    # convert HSL color to RGB
-                    rgb_color = colorsys.hls_to_rgb(hue / 360.0, lightness / 100.0, saturation / 100.0)
+                        # convert HSL color to RGB
+                        rgb_color = colorsys.hls_to_rgb(hue / 360.0, lightness / 100.0, saturation / 100.0)
                     
-                    # Convert RGB values to integers in the range [0, 255]
-                    rgb_int = tuple(int(c * 255) for c in rgb_color)
+                        # Convert RGB values to integers in the range [0, 255]
+                        rgb_int = tuple(int(c * 255) for c in rgb_color)
                     
                 obst_rect = pygame.Rect(x * cell_w + 1, y * cell_h + 1, cell_w - 2, cell_h - 2)
                 pygame.draw.rect(self.screen, rgb_int, obst_rect)                   
@@ -226,7 +231,7 @@ class Env:
         # Draw the victims
         v=0
         for victim in self.victims:
-            victim_rect = pygame.Rect(victim[0] * cell_w + 2, victim[1] * cell_h + 2, cell_w - 4, cell_h - 4)
+            victim_rect = pygame.Rect(victim[0] * cell_w + 1, victim[1] * cell_h + 1, cell_w - 1, cell_h - 1)
             c = self.severity[v]-1
             pygame.draw.ellipse(self.screen, VS.VIC_COLOR_LIST[c], victim_rect)
             if self.saved[v] != []:
@@ -276,8 +281,6 @@ class Env:
         # Create the main loop
         running = True
 
-        unified_map = Map()
-        
         while running:
             # Handle events
             for event in pygame.event.get():
@@ -312,24 +315,6 @@ class Env:
 
                 elif body._state == VS.IDLE:
                     active_or_idle = True
-                    
-                explorer = [ag for ag in self.agents if ag.mind.NAME.startswith("Explorer")]
-                rescuer = [ag for ag in self.agents if ag.mind.NAME.startswith("RESCUER")]
-                if len(unified_map.map_data) == 0 and all(ag._state != VS.ACTIVE for ag in explorer) and all(ag._state == VS.IDLE for ag in rescuer):
-                    victimes = {}
-                    for ag in rescuer:
-                        if ag.mind.NAME.startswith("RESCUER"):
-                            ag._state = VS.ACTIVE
-                            print(f"ENV: {ag.mind.NAME} is now active")
-                    for ag in explorer:
-                        if ag._state != VS.DEAD:
-                            unified_map.add_map_data(ag.mind.map.map_data)
-                            victimes.update(ag.mind.victims)
-                            
-                    assignments, centroids = Rescuer.k_means_clustering(victimes)
-                    
-                    self.plot_kmeans(unified_map, victimes, assignments, centroids)
-                    
 
             # Update the grid after the delay
             if self.dic["DELAY"] > 0:
@@ -356,32 +341,6 @@ class Env:
 
         # Quit Pygame
         pygame.quit()
-
-    def plot_kmeans(self, map :Map, victimes, assignments, centroids):
-        cores = ['red', 'blue', 'green', 'purple']
-        data = Rescuer.create_array_victims(victimes)
-                    
-        for i in range(4):
-            cluster_points = data[assignments == i]
-            plt.scatter(cluster_points[:, 0], cluster_points[:, 1], color=cores[i], label=f'Cluster {i+1}')
-            plt.scatter(centroids[i, 0], centroids[i, 1], color=cores[i], marker='x', s=100)
-                    
-        plt.xlabel('Eixo X')
-        plt.ylabel('Eixo Y')
-        
-        min_x = min(key[0] for key in map.map_data.keys())
-        max_x = max(key[0] for key in map.map_data.keys())
-        min_y = min(key[1] for key in map.map_data.keys())
-        max_y = max(key[1] for key in map.map_data.keys())
-        plt.axis([min_x - 1, max_x + 1, max_y + 1, min_y - 1])
-                    
-        plt.scatter(0, 0, color='black', marker= '*' , label='Base')
-                    
-        plt.title('Gráfico dos Pontos do Cluster e Centroides')
-                    
-        plt.legend()
-        plt.grid(True)
-        plt.show()
 
     def __print_victims(self, victims, type_str, sub, ident=3):
         """ Print either the found or the saved victims list
@@ -423,8 +382,16 @@ class Env:
             
             print(f"{idents}Sum of gravities of all {type_str} victims = {tot_grav:.2f} of a total of {self.sum_gravity:.2f}")
             print(f"{idents}  % of gravities of all {type_str} victims = {tot_grav/self.sum_gravity:.2f}")
+            print(f"{idents}--------------------------------------")
+            print(f"{idents}CSV of {type_str} victims")
+            print(f"{idents}V{sub}1,V{sub}2,V{sub}3,V{sub}4,V{sub}g")
+            print(f"{idents}{sev.count(1)},{sev.count(2)},{sev.count(3)},{sev.count(4)},{weighted}")
         else:
             print(f"{idents}No {type_str} victims")
+            print(f"{idents}--------------------------------------")
+            print(f"{idents}CSV of {type_str} victims")
+            print(f"{idents}V{sub}1,V{sub}2,V{sub}3,V{sub}4,V{sub}g")
+            print(f"{idents}0,0,0,0,0.0")
 
     def print_results(self):
         """ For each agent, print found victims and saved victims by severity
@@ -438,8 +405,8 @@ class Env:
                 print("This agent is dead, you should discard its results, but...")
 
             # Remaining time
-            print("\n*** Used time ***")
-            print(f"{body._rtime:.2f} of {body.mind.TLIM:.2f}")
+            print("\n*** Consumed time ***")
+            print(f"{body.mind.TLIM - body._rtime:.2f} of {body.mind.TLIM:.2f}")
         
             # Found victims
             found = body._get_found_victims()
@@ -454,21 +421,27 @@ class Env:
         """ Print found victims and saved victims by severity for all agents.
         This is what actually happened in the environment"""
 
+
         print("\n\n*** ACUMULATED RESULTS - FOR ALL AGENTS ***\n")
         print(f" *** Numbers of Victims in the Environment ***")
-        print(f"   Critical victims   (V1) = {self.severity.count(1):3d}")
-        print(f"   Instable victims   (V2) = {self.severity.count(2):3d}")
-        print(f"   Pot. inst. victims (V3) = {self.severity.count(3):3d}")
-        print(f"   Stable victims     (V4) = {self.severity.count(4):3d}")
+        print(f"   Critical victims    (V1) = {self.severity.count(1):3d}")
+        print(f"   Instable victims    (V2) = {self.severity.count(2):3d}")
+        print(f"   Pot. inst. victims  (V3) = {self.severity.count(3):3d}")
+        print(f"   Stable victims      (V4) = {self.severity.count(4):3d}")
         print(f"   --------------------------------------")
-        print(f"   Total of victims   (V)  = {self.nb_of_victims:3d}")
+        print(f"   Total of victims    (V)  = {self.nb_of_victims:3d}")
+        print(f"   Sum of all gravities(SG) = {self.sum_gravity:.2f}")
+        print(f"   --------------------------------------")
+        print(f"   CSV of nb. total of victims")
+        print(f"   V1,V2,V3,V4,SG")
+        print(f"   {self.severity.count(1)},{self.severity.count(2)},{self.severity.count(3)},{self.severity.count(4)},{self.sum_gravity}")
 
         found = []
         for index, agents in enumerate(self.found, start=0):
             if agents:
                 found.append(index)
         print(f"")
-        print(f" *** FOUND victims by all explorer agents***")
+        print(f" *** FOUND victims by all explorer agents ***")
         self.__print_victims(found, "found", "e", ident=5)
     
         saved = []
@@ -476,5 +449,7 @@ class Env:
             if agents:
                 saved.append(index)
         print(f"")
-        print(f" *** SAVED victims by all rescuer agents***")
+        print(f" *** SAVED victims by all rescuer agents ***")
         self.__print_victims(saved, "saved", "s", ident=5)
+        print(f"\n *** END OF STATS ***")
+

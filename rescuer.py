@@ -7,6 +7,7 @@
 
 import os
 import random
+from ag_path import AGPath
 from map import Map
 from vs.abstract_agent import AbstAgent
 from vs.physical_agent import PhysAgent
@@ -17,7 +18,7 @@ import numpy as np
 
 ## Classe que define o Agente Rescuer com um plano fixo
 class Rescuer(AbstAgent):
-    def __init__(self, env, config_file):
+    def __init__(self, env, config_file, id, classification):
         """ 
         @param env: a reference to an instance of the environment class
         @param config_file: the absolute path to the agent's config file"""
@@ -35,7 +36,12 @@ class Rescuer(AbstAgent):
         self.plan_walk_time = 0.0   # previewed time to walk during rescue
         self.x = 0                  # the current x position of the rescuer when executing the plan
         self.y = 0                  # the current y position of the rescuer when executing the plan
-
+        self.NAME = f"Rescuer_{id}"
+        self.classification = classification
+        
+        self.plan_excuted = []
+        self.victims_saved = 0
+        self.returning = False
                 
         # Starts in IDLE state.
         # It changes to ACTIVE when the map arrives
@@ -57,14 +63,14 @@ class Rescuer(AbstAgent):
         self.victims = victims
 
         # print the found victims - you may comment out
-        for seq, data in self.victims.items():
+        for data in self.victim:
             coord, vital_signals = data
             x, y = coord
-            print(f"{self.NAME} Victim seq number: {seq} at ({x}, {y}) vs: {vital_signals}")
+            print(f"{self.NAME} Victim at ({x}, {y}) vs: {vital_signals}")
 
         print(f"{self.NAME} time limit to rescue {self.plan_rtime}")
 
-        self.__planner()
+        #self.__planner()
         print(f"{self.NAME} PLAN")
         i = 1
         self.plan_x = 0
@@ -163,21 +169,17 @@ class Rescuer(AbstAgent):
         # Besides, it has a flag indicating that a first-aid kit must be delivered when the move is completed.
         # For instance (0,1,True) means the agent walk to (x+0,y+1) and after walking, it leaves the kit.
 
+        path_generator = AGPath(self.map, self.TLIM, (0,0), self.victim)
+        path_generator.executar_ag()
+        path = path_generator.melhor_caminho
+
         self.plan_visited.add((0,0)) # always start from the base, so it is already visited
-        difficulty, vic_seq, actions_res = self.map.get((0,0))
-        self.__depth_search(actions_res)
+        #difficulty, vic_seq, actions_res = self.map.get((0,0))
+        #self.__depth_search(actions_res)
 
-        # push actions into the plan to come back to the base
-        if self.plan == []:
-            return
+        self.plan = path
 
-        come_back_plan = []
-
-        for a in reversed(self.plan):
-            # triple: dx, dy, no victim - when coming back do not rescue any victim
-            come_back_plan.append((a[0]*-1, a[1]*-1, False))
-
-        self.plan = self.plan + come_back_plan
+        #self.plan = self.plan + come_back_plan
         
         
     def deliberate(self) -> bool:
@@ -191,16 +193,17 @@ class Rescuer(AbstAgent):
         if self.plan == []:  # empty list, no more actions to do
            input(f"{self.NAME} has finished the plan [ENTER]")
            return False
-    #    else:
-    #        # There is at least one action to do
-    #        self.go_save_victims(self.map, self.victims)
+        else:
+            # There is at least one action to do
+            self.go_save_victims(self.map, self.victims)
 
         # Takes the first action of the plan (walk action) and removes it from the plan
-        dx, dy, there_is_vict = self.plan.pop(0)
-        print(f"{self.NAME} pop dx: {dx} dy: {dy} vict: {there_is_vict}")
+        dx, dy = self.plan.pop(0)
 
         # Walk - just one step per deliberation
         walked = self.walk(dx, dy)
+        
+        self.plan_excuted.append((dx, dy))
 
         # Rescue the victim at the current position
         if walked == VS.EXECUTED:
@@ -208,8 +211,14 @@ class Rescuer(AbstAgent):
             self.y += dy
             print(f"{self.NAME} Walk ok - Rescuer at position ({self.x}, {self.y})")
             # check if there is a victim at the current position
-            if there_is_vict:
+            
+            is_victim = False
+            for vit in self.victim:
+                if vit[0] == (self.x, self.y):
+                    is_victim = True
+            if is_victim:
                 rescued = self.first_aid() # True when rescued
+                self.victims_saved += 1
                 if rescued:
                     print(f"{self.NAME} Victim rescued at ({self.x}, {self.y})")
                 else:
@@ -219,39 +228,24 @@ class Rescuer(AbstAgent):
             
         #input(f"{self.NAME} remaining time: {self.get_rtime()} Tecle enter")
 
-        return True
-
-    @staticmethod
-    def k_means_clustering(victims, max_iterations=100):
-        """ A static method that groups the victims in 4 clusters
-        @param victims: a dictionary with the victims found by the explorer
-        @return a dictionary with the victims grouped by clusters"""
-
-        # The victims are grouped in 4 clusters
-        k = 4
-        
-        data = Rescuer.create_array_victims(victims)
-
-        rng = np.random.default_rng(0)
-        centroids = data[rng.choice(range(len(data)), k, replace=False)]
-        
-        for _ in range(max_iterations):
-            
-            assignments = np.argmin(np.linalg.norm(data[:, np.newaxis] - centroids, axis=2), axis=1)
-        
-            new_centroids = np.array([data[assignments == i].mean(axis=0) for i in range(k)])
-        
-            if np.allclose(new_centroids, centroids):
-                break
-        
-            centroids = new_centroids
-    
-        return assignments, centroids
-    
-    @staticmethod
-    def create_array_victims(victims):
-        possicoes = []
-        for chave, lista in victims.items():
-            possicoes.append(lista[0])
+        if self.victims_saved == len(self.victim) and not self.returning:
+            print(f"{self.NAME} all victims rescued")
+            self.plan = []
+            self.returning = True
+            for a in reversed(self.plan_excuted):
+                # triple: dx, dy, no victim - when coming back do not rescue any victim
+                self.plan.append((a[0]*-1, a[1]*-1))
                 
-        return np.array(possicoes)
+        return True
+    
+    def start_work(self, map: Map):
+        self.map = map
+        self.set_state(VS.ACTIVE)
+        self.__planner()
+        
+    def add_victim(self, victim):
+        self.victim = victim
+        
+        for value in self.victim:
+            grav = self.classification.compute(value[1][3], value[1][4], value[1][5])
+            value[1].append(grav)
